@@ -1,0 +1,10 @@
+.git
+.gitignore
+.venv
+__pycache__
+*.pyc
+.pytest_cache
+data
+PROJECT_PLAN.private.md
+pytest-cache-files-*
+

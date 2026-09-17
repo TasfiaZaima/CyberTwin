@@ -123,6 +123,64 @@ class Database:
             ).fetchall()
         return {str(row["name"]) for row in rows if row["name"] != "sqlite_sequence"}
 
+    def execute(self, sql: str, parameters: Sequence[Any] = ()) -> int:
+        """Execute a write statement and return its inserted row identifier."""
+
+        with self.connect() as connection:
+            cursor = connection.execute(sql, tuple(parameters))
+            return int(cursor.lastrowid or 0)
+
+    def query(self, sql: str, parameters: Sequence[Any] = ()) -> list[dict[str, Any]]:
+        """Execute a read statement and return plain dictionaries."""
+
+        with self.connect() as connection:
+            rows = connection.execute(sql, tuple(parameters)).fetchall()
+        return [dict(row) for row in rows]
+
+    def add_telemetry(self, event: Mapping[str, Any]) -> int:
+        return self.execute(
+            """INSERT INTO telemetry (timestamp, device_id, source_ip, destination,
+               destination_port, protocol, packets, bytes, direction)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            [event["timestamp"], event["device_id"], event["source_ip"],
+             event["destination"], event["destination_port"], event["protocol"],
+             event["packets"], event["bytes"], event.get("direction", "outbound")],
+        )
+
+    def telemetry(self, device_id: str, limit: int = 500) -> list[dict[str, Any]]:
+        return self.query(
+            "SELECT * FROM telemetry WHERE device_id=? ORDER BY timestamp DESC LIMIT ?",
+            [device_id, limit],
+        )
+
+    def add_features(self, values: Mapping[str, Any]) -> int:
+        columns = ["device_id", "window_start", "window_end", "packets_per_second",
+                   "bytes_per_second", "connections_per_minute", "unique_destinations",
+                   "unique_ports", "dns_requests", "tcp_connections", "udp_connections",
+                   "avg_packet_size", "outbound_ratio", "anomaly_score", "detector"]
+        return self.execute(
+            f"INSERT OR REPLACE INTO features ({','.join(columns)}) VALUES ({','.join('?' for _ in columns)})",
+            [values.get(column) for column in columns],
+        )
+
+    def feature_rows(self, device_id: str, limit: int = 200) -> list[dict[str, Any]]:
+        return self.query(
+            "SELECT * FROM features WHERE device_id=? ORDER BY window_end DESC LIMIT ?",
+            [device_id, limit],
+        )
+
+    def baselines(self, device_id: str) -> list[dict[str, Any]]:
+        return self.query("SELECT * FROM baselines WHERE device_id=? ORDER BY feature_name", [device_id])
+
+    def alerts(self, device_id: str | None = None, limit: int = 200) -> list[dict[str, Any]]:
+        if device_id:
+            return self.query("SELECT * FROM alerts WHERE device_id=? ORDER BY timestamp DESC LIMIT ?", [device_id, limit])
+        return self.query("SELECT * FROM alerts ORDER BY timestamp DESC LIMIT ?", [limit])
+
+    def update_device_state(self, device_id: str, status: str, score: float) -> None:
+        self.execute("UPDATE devices SET status=?, anomaly_score=?, last_update=? WHERE device_id=?",
+                     [status, score, utc_now(), device_id])
+
     @staticmethod
     def _device_dict(row: Mapping[str, Any]) -> dict[str, Any]:
         item = dict(row)
@@ -215,4 +273,3 @@ CREATE INDEX IF NOT EXISTS idx_features_device_time
 CREATE INDEX IF NOT EXISTS idx_alerts_device_time
     ON alerts(device_id, timestamp);
 """
-

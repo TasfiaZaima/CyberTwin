@@ -1,0 +1,1 @@
+"""Smart camera simulator."""

@@ -1,17 +1,46 @@
 services:
-  database-init:
+  api:
     build: .
-    command: python -m database.setup
-    volumes:
-      - cybertwin-data:/app/data
-    networks:
-      - cybertwin-net
-
+    environment: {CYBERTWIN_DB: /app/data/cybertwin.db}
+    volumes: [cybertwin-data:/app/data]
+    ports: ["8000:8000"]
+    networks: [cybertwin-net]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+  dashboard:
+    build: .
+    command: streamlit run dashboard/app.py --server.address=0.0.0.0
+    environment: {CYBERTWIN_API: "http://api:8000"}
+    ports: ["8501:8501"]
+    networks: [cybertwin-net]
+    depends_on: {api: {condition: service_healthy}}
+  camera:
+    build: {context: ., dockerfile: devices/camera/Dockerfile}
+    environment: {DEVICE_ID: camera-01, CYBERTWIN_API: "http://api:8000"}
+    networks: [cybertwin-net]
+    depends_on: {api: {condition: service_healthy}}
+  smart-plug:
+    build: {context: ., dockerfile: devices/smart_plug/Dockerfile}
+    environment: {DEVICE_ID: smart-plug-01, CYBERTWIN_API: "http://api:8000"}
+    networks: [cybertwin-net]
+    depends_on: {api: {condition: service_healthy}}
+  temperature-sensor:
+    build: {context: ., dockerfile: devices/temperature_sensor/Dockerfile}
+    environment: {DEVICE_ID: temperature-sensor-01, CYBERTWIN_API: "http://api:8000"}
+    networks: [cybertwin-net]
+    depends_on: {api: {condition: service_healthy}}
+  edge-gateway:
+    build: .
+    command: python -m devices.device_service
+    environment: {DEVICE_ID: edge-gateway-01, CYBERTWIN_API: "http://api:8000"}
+    networks: [cybertwin-net]
+    depends_on: {api: {condition: service_healthy}}
 volumes:
   cybertwin-data:
-
 networks:
   cybertwin-net:
     driver: bridge
     internal: true
-
