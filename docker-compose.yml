@@ -1,0 +1,17 @@
+services:
+  database-init:
+    build: .
+    command: python -m database.setup
+    volumes:
+      - cybertwin-data:/app/data
+    networks:
+      - cybertwin-net
+
+volumes:
+  cybertwin-data:
+
+networks:
+  cybertwin-net:
+    driver: bridge
+    internal: true
+
